@@ -1,26 +1,46 @@
-import { Injectable } from '@nestjs/common';
-import { CreateCarHistoryDto } from './dto/create-car-history.dto';
-import { UpdateCarHistoryDto } from './dto/update-car-history.dto';
+import { Injectable } from "@nestjs/common";
+import { CreateCarHistoryDto } from "./dto/create-car-history.dto";
+import { UpdateCarHistoryDto } from "./dto/update-car-history.dto";
+import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
 export class CarHistoryService {
-  create(createCarHistoryDto: CreateCarHistoryDto) {
-    return 'This action adds a new carHistory';
+  constructor(private prisma: PrismaService) {}
+
+  // CREATE
+  async create(createCarHistoryDto: CreateCarHistoryDto) {
+    return this.prisma.carHistory.create({
+      data: createCarHistoryDto,
+    });
   }
 
-  findAll() {
-    return `This action returns all carHistory`;
+  // READ ALL
+  async findAll() {
+    return this.prisma.carHistory.findMany({
+      include: { car: true }, // bog‘langan mashina ma'lumotini ham chiqaradi
+    });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} carHistory`;
+  // READ ONE
+  async findOne(id: number) {
+    return this.prisma.carHistory.findUnique({
+      where: { id },
+      include: { car: true },
+    });
   }
 
-  update(id: number, updateCarHistoryDto: UpdateCarHistoryDto) {
-    return `This action updates a #${id} carHistory`;
+  // UPDATE
+  async update(id: number, updateCarHistoryDto: UpdateCarHistoryDto) {
+    return this.prisma.carHistory.update({
+      where: { id },
+      data: updateCarHistoryDto,
+    });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} carHistory`;
+  // DELETE
+  async remove(id: number) {
+    return this.prisma.carHistory.delete({
+      where: { id },
+    });
   }
 }
