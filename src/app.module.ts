@@ -8,6 +8,7 @@ import { AdminModule } from "./admin/admin.module";
 import { CarModule } from './car/car.module';
 import { CarHistoryModule } from './car-history/car-history.module';
 import { RegionsModule } from './regions/regions.module';
+import { DistrictModule } from './district/district.module';
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { RegionsModule } from './regions/regions.module';
     AuthModule,
     CarModule,
     CarHistoryModule,
-    RegionsModule
+    RegionsModule,
+    DistrictModule
   ],
   controllers: [],
   providers: [],
