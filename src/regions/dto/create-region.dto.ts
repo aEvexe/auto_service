@@ -1,1 +1,3 @@
-export class CreateRegionDto {}
+export class CreateRegionDto {
+  name: string;
+}
