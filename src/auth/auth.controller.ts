@@ -1,9 +1,11 @@
-import { Controller, Post, Body, Res, Param } from "@nestjs/common";
+import { Controller, Post, Body, Res, Param, UseGuards } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { ParseIntPipe } from "@nestjs/common";
 import { Response } from "express";
 import { CreateUserDto, SigninUserDto } from "../users/dto";
 import { CookieGetter } from "../common/decorators/cookie-getter.decorator";
+import { GetCurrentUserId } from "../common/decorators";
+import { RefreshTokenGuard } from "../common/guards";
 
 @Controller("auth")
 export class AuthController {
@@ -22,12 +24,13 @@ export class AuthController {
     return this.authService.signin(SigninUserDto, res);
   }
 
+  @UseGuards(RefreshTokenGuard)
   @Post("singout")
   signout(
-    @CookieGetter("refreshToken") refreshToken: string,
+    @GetCurrentUserId() userId: number,
     @Res({ passthrough: true }) res: Response
   ) {
-    return this.authService.signout(refreshToken, res);
+    return this.authService.signout(+userId, res);
   }
 
   @Post(":id/refresh")

@@ -21,6 +21,7 @@ model User {
   phone              String? @unique @db.VarChar(15)
   hashedPassword     String
   hashedRefreshToken String?
+  is_active          Boolean @default(false)
   activation_link    String? @default(uuid())
 
   createdAt DateTime @default(now())
@@ -30,13 +31,14 @@ model User {
 }
 
 model Admin {
-  id         Int    @id @default(autoincrement())
-  full_name  String @db.VarChar(100)
-  phone      String @unique @db.VarChar(100)
-  email      String @unique @db.VarChar(100)
-  password   String @db.VarChar(100)
-  is_creator String @db.VarChar(100)
-  refresh_token String? 
+  id            Int     @id @default(autoincrement())
+  full_name     String  @db.VarChar(100)
+  phone         String  @unique @db.VarChar(100)
+  email         String  @unique @db.VarChar(100)
+  hashedPassword     String
+  hashedRefreshToken String?
+  is_creator    String  @db.VarChar(100)
+  refresh_token String?
 
   @@map("admin")
 }

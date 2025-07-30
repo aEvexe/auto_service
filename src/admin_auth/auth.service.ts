@@ -1,34 +1,41 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { PrismaService } from "../prisma/prisma.service";
 import { Response } from "express";
-import { CreateAdminDto } from "../admin/dto/create-admin.dto";
-import { AdminService } from "../admin/admin.service";
-import { SigninAdminDto } from "../admin/dto/signin-admin.dto";
 import * as bcrypt from "bcrypt";
+import { v4 as uuidv4 } from "uuid";
+import { MailService } from "../mail/mail.service";
+import { ResponseFields, Tokens } from "../common/types";
 import { Admin } from "../../generated/prisma";
+import { CreateAdminDto } from "../admin/dto/create-admin.dto";
+import { SigninAdminDto } from "../admin/dto/signin-admin.dto";
 
 @Injectable()
-export class AuthService {
+export class AdminAuthService {
   constructor(
+    private readonly prismaService: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly adminService: AdminService
+    private readonly mailService: MailService
   ) {}
 
-  async generateToken(admin: Admin) {
+  async generateToken(admin: Admin): Promise<Tokens> {
     const payload = {
       id: admin.id,
       email: admin.email,
+      role: "admin",
       is_creator: admin.is_creator,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: process.env.ADMIN_ACCES_TOKEN_KEY,
-        expiresIn: process.env.ADMIN_ACCES_TOKEN_TIME,
+        secret: process.env.ADMIN_ACCESS_TOKEN_KEY,
+        expiresIn: process.env.ADMIN_ACCESS_TOKEN_TIME,
       }),
       this.jwtService.signAsync(payload, {
         secret: process.env.ADMIN_REFRESH_TOKEN_KEY,
@@ -36,92 +43,123 @@ export class AuthService {
       }),
     ]);
 
-    return {
-      accessToken,
-      refreshToken,
-    };
+    return { accessToken, refreshToken };
   }
 
-  async register(createAdminDto: CreateAdminDto) {
-    // 🔧 FIXED: check by email before creating new admin
-    const admin = await this.adminService.findUserByEmail(createAdminDto.email);
-    if (admin) {
+  async signup(createAdminDto: CreateAdminDto) {
+    const { email } = createAdminDto;
+    const existingAdmin = await this.prismaService.admin.findUnique({
+      where: { email },
+    });
+
+    if (existingAdmin) {
       throw new ConflictException("This admin already exists");
     }
 
-    // 🔧 ENCRYPT PASSWORD BEFORE SAVING
-    const hashedPassword = await bcrypt.hash(createAdminDto.password, 10);
-    const newUser = await this.adminService.create({
-      ...createAdminDto,
-      password: hashedPassword,
+    const activationLink = uuidv4();
+
+    const newAdmin = await this.prismaService.admin.create({
+      data: {
+        ...createAdminDto,
+        hashedPassword: await bcrypt.hash(createAdminDto.password, 10),
+      },
     });
 
-    return { adminId: newUser.id }; // 🔧 CHANGED: from _id to id
+    return {
+      message: "New admin created. Check email for activation link.",
+      adminId: newAdmin.id,
+      activationLink,
+    };
   }
 
-  async login(loginAdminDto: SigninAdminDto, res: Response) {
-    const admin = await this.adminService.findUserByEmail(loginAdminDto.email);
+  async signin(
+    signinAdminDto: SigninAdminDto,
+    res: Response
+  ): Promise<ResponseFields> {
+    const { email, password } = signinAdminDto;
+    const admin = await this.prismaService.admin.findUnique({
+      where: { email },
+    });
 
     if (!admin) {
-      throw new UnauthorizedException("Email yoki parol noto'g'ri"); // Uzbek: Email or password is incorrect
+      throw new UnauthorizedException("Invalid email or password");
     }
 
-    const isMatched = await bcrypt.compare(
-      loginAdminDto.password,
-      admin.password
-    );
-
+    const isMatched = await bcrypt.compare(password, admin.hashedPassword);
     if (!isMatched) {
-      throw new UnauthorizedException("Email yoki parol noto'g'ri");
+      throw new UnauthorizedException("Invalid email or password");
     }
 
     const { accessToken, refreshToken } = await this.generateToken(admin);
+    const hashedRefreshToken = await bcrypt.hash(refreshToken, 7);
 
-    // 🔧 Save hashed refresh token in DB
-    const hashedToken = await bcrypt.hash(refreshToken, 7);
-    admin.refresh_token = hashedToken;
-    await this.adminService.update(admin.id, { refresh_token: hashedToken }); // 🔧 Better to use service update
-
-    res.cookie("refreshToken", refreshToken, {
-      maxAge: +process.env.COOKIE_TIME!,
-      httpOnly: true,
-      secure: true,
-      sameSite: "strict", 
+    await this.prismaService.admin.update({
+      where: { id: admin.id },
+      data: { hashedRefreshToken },
     });
 
-    return { adminId: admin.id, accessToken };
+    res.cookie("admin_refreshToken", refreshToken, {
+      maxAge: +process.env.COOKIE_TIME!,
+      httpOnly: true,
+    });
+
+    return {
+      message: "Admin signed in",
+      userId: admin.id,
+      accessToken,
+    };
   }
 
-  async signout(refreshToken: string, res: Response) {
-    res.clearCookie("refreshToken");
+  async signout(adminId: string, res: Response) {
+    const admin = await this.prismaService.admin.updateMany({
+      where: {
+        id: Number(adminId), // convert to number
+        hashedRefreshToken: { not: null },
+      },
+      data: { hashedRefreshToken: null },
+    });
+    if (!admin) throw new ForbiddenException("Access denied");
+    res.clearCookie("admin_refreshToken");
     return { message: "Admin signed out" };
   }
 
-  async refreshToken(id: string, refreshToken: string, res: Response) {
-    // 🔧 Use findOneBy for ID search
-    const admin = await this.adminService.findById(+id);
-
-    if (!admin || !admin.refresh_token) {
-      throw new UnauthorizedException("Admin not found or no refresh token");
+  async refreshToken(
+    adminId: string,
+    refreshTokenFromCookie: string,
+    res: Response
+  ) {
+    const decodedToken: any = this.jwtService.decode(refreshTokenFromCookie);
+    if (!decodedToken || decodedToken.id !== Number(adminId)) {
+      // also cast here
+      throw new ForbiddenException("Not allowed");
     }
 
-    const isMatch = await bcrypt.compare(refreshToken, admin.refresh_token);
-    if (!isMatch) {
-      throw new UnauthorizedException("Invalid refresh token");
+    const admin = await this.prismaService.admin.findUnique({
+      where: { id: Number(adminId) }, // convert to number
+    });
+    if (!admin || !admin.hashedRefreshToken) {
+      throw new NotFoundException("Admin not found or refresh token missing");
     }
 
-    const tokens = await this.generateToken(admin);
-    const hashedToken = await bcrypt.hash(tokens.refreshToken, 7);
-    admin.refresh_token = hashedToken;
-    await this.adminService.update(admin.id, { refresh_token: hashedToken });
+    const tokenMatch = await bcrypt.compare(
+      refreshTokenFromCookie,
+      admin.hashedRefreshToken
+    );
+    if (!tokenMatch) throw new ForbiddenException("Forbidden");
 
-    res.cookie("refreshToken", tokens.refreshToken, {
-      maxAge: +process.env.COOKIE_TIME!,
-      httpOnly: true,
-      secure: true,
-      sameSite: "strict",
+    const { accessToken, refreshToken } = await this.generateToken(admin);
+    const newHashedRefreshToken = await bcrypt.hash(refreshToken, 7);
+
+    await this.prismaService.admin.update({
+      where: { id: Number(admin.id) }, // convert to number
+      data: { hashedRefreshToken: newHashedRefreshToken },
     });
 
-    return { adminId: admin.id, accessToken: tokens.accessToken };
+    res.cookie("admin_refreshToken", refreshToken, {
+      maxAge: Number(process.env.COOKIE_TIME),
+      httpOnly: true,
+    });
+
+    return { message: "Admin token refreshed", userId: admin.id, accessToken };
   }
 }

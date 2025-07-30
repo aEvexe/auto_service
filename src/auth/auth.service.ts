@@ -10,10 +10,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateUserDto, SigninUserDto } from "../users/dto";
 import { UsersService } from "../users/users.service";
 import { Response } from "express";
+import { User } from "../../generated/prisma";
 import * as bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import { MailService } from "../mail/mail.service";
-import { User } from "../../generated/prisma";
+import { ResponseFields, Tokens } from "../common/types";
 
 @Injectable()
 export class AuthService {
@@ -24,8 +25,12 @@ export class AuthService {
     private readonly mailService: MailService
   ) {}
 
-  async generateToken(user: User) {
-    const payload = { id: user.id, email: user.email };
+  async generateToken(user: User): Promise<Tokens> {
+    const payload = {
+      id: user.id,
+      email: user.email,
+      is_active: user.is_active,
+    };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
@@ -69,7 +74,10 @@ export class AuthService {
     };
   }
 
-  async signin(signinUserDto: SigninUserDto, res: Response) {
+  async signin(
+    signinUserDto: SigninUserDto,
+    res: Response
+  ): Promise<ResponseFields> {
     const { email, password } = signinUserDto;
     const user = await this.prismaService.user.findUnique({ where: { email } });
 
@@ -95,10 +103,26 @@ export class AuthService {
       httpOnly: true,
     });
 
-    return { userId: user.id, accessToken };
+    return {
+      message: "Foydanaluvchi tizimga qoshildi",
+      userId: user.id,
+      accessToken,
+    };
   }
 
-  async signout(refreshToken: string, res: Response) {
+  async signout(userId: number, res: Response) {
+    const user = await this.prismaService.user.updateMany({
+      where: {
+        id: userId,
+        hashedRefreshToken: {
+          not: null,
+        },
+      },
+      data: {
+        hashedRefreshToken: null,
+      },
+    });
+    if (!user) throw new ForbiddenException("access denied");
     res.clearCookie("refreshToken");
     return { message: "User signed out" };
   }

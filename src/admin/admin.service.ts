@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { CreateAdminDto } from "./dto/create-admin.dto";
 import { UpdateAdminDto } from "./dto/update-admin.dto";
+import * as bcrypt from "bcrypt";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -9,7 +10,13 @@ export class AdminService {
 
   async create(createAdminDto: CreateAdminDto) {
     return await this.prisma.admin.create({
-      data: createAdminDto,
+      data: {
+        full_name: createAdminDto.full_name,
+        email: createAdminDto.email,
+        phone: createAdminDto.phone,
+        hashedPassword: await bcrypt.hash(createAdminDto.password, 10), // <-- hash here
+        is_creator: createAdminDto.is_creator ?? false,
+      },
     });
   }
 
