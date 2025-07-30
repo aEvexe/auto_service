@@ -42,3 +42,42 @@ model Admin {
 
   @@map("admin")
 }
+
+model Car {
+  id              Int          @id @default(autoincrement())
+  plate_number    String
+  vin_number      String
+  model           String
+  year            String
+  current_owner_id Int
+  CarHistory      CarHistory[]
+
+  @@map("car")
+}
+
+model CarHistory {
+  id        Int    @id @default(autoincrement())
+  car_id    Int
+  owner_id  Int
+  buyed_at  DateTime
+  sold_at   DateTime?
+
+  car       Car    @relation(fields: [car_id], references: [id])
+
+  @@map("car_history")
+}
+
+model Regions {
+  id    Int    @id @default(autoincrement())
+  name  String
+  District District[]
+  @@map("regions")
+}
+
+model District {
+  id        Int      @id @default(autoincrement())
+  name      String
+  regionId  Int
+  region    Regions  @relation(fields: [regionId], references: [id])
+  @@map("district")
+}

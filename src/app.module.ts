@@ -5,6 +5,9 @@ import { UsersModule } from "./users/users.module";
 import { AuthModule } from "./auth/auth.module";
 import { AdminAuthModule } from "./admin_auth/auth.module";
 import { AdminModule } from "./admin/admin.module";
+import { CarModule } from './car/car.module';
+import { CarHistoryModule } from './car-history/car-history.module';
+import { RegionsModule } from './regions/regions.module';
 
 @Module({
   imports: [
@@ -13,7 +16,10 @@ import { AdminModule } from "./admin/admin.module";
     UsersModule,
     AuthModule,
     AdminModule,
-    AuthModule
+    AuthModule,
+    CarModule,
+    CarHistoryModule,
+    RegionsModule
   ],
   controllers: [],
   providers: [],
